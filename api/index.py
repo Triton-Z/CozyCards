@@ -10,6 +10,7 @@ import re
 import base64
 import mimetypes
 import shutil
+import urllib.parse
 from pathlib import Path
 import zstandard as zstd
 
@@ -252,6 +253,60 @@ def ping():
     return jsonify({"status": "ok"})
 
 
+def _fetch_quizlet_html(url: str) -> tuple[int, str]:
+    """Fetch the HTML for a Quizlet URL, routing through a proxy/ScraperAPI when configured.
+
+    On Vercel (or any datacenter host) Quizlet's Cloudflare protection blocks
+    requests originating from datacenter IP ranges.  Two escape hatches are
+    supported via environment variables:
+
+    SCRAPER_API_KEY  – API key for scraperapi.com (free tier: 5,000 req/month).
+                       When set, the request is routed through ScraperAPI which
+                       uses residential IPs to bypass Cloudflare.
+                       Sign up free at https://www.scraperapi.com/
+
+    QUIZLET_PROXY_URL – A full proxy URL (http/https/socks5) that will be
+                        passed directly to curl_cffi.  Useful when you supply
+                        your own residential or rotating proxy.
+                        Example: "socks5://user:pass@proxy.example.com:1080"
+
+    If neither variable is set the request falls back to a direct curl_cffi
+    Chrome-impersonation call (works fine on local / non-datacenter hosts).
+    """
+    # Validate that the URL targets quizlet.com to prevent SSRF
+    parsed = urllib.parse.urlparse(url)
+    if parsed.scheme not in ('http', 'https') or not (
+        parsed.netloc == 'quizlet.com' or parsed.netloc.endswith('.quizlet.com')
+    ):
+        raise ValueError("URL must be a quizlet.com address")
+
+    scraper_api_key = os.environ.get('SCRAPER_API_KEY', '').strip()
+    proxy_url = os.environ.get('QUIZLET_PROXY_URL', '').strip()
+
+    if scraper_api_key:
+        # Route through ScraperAPI – it handles JS rendering and Cloudflare bypass
+        api_url = (
+            'http://api.scraperapi.com'
+            f'?api_key={scraper_api_key}'
+            f'&url={urllib.parse.quote_plus(url)}'
+            '&render=true'
+        )
+        resp = cffi_requests.get(api_url, impersonate="chrome", timeout=60)
+    elif proxy_url:
+        # Use caller-supplied proxy with Chrome TLS fingerprint
+        resp = cffi_requests.get(
+            url,
+            impersonate="chrome",
+            proxies={"https": proxy_url, "http": proxy_url},
+            timeout=30,
+        )
+    else:
+        # Direct connection — works locally, may be blocked on Vercel
+        resp = cffi_requests.get(url, impersonate="chrome", timeout=15)
+
+    return resp.status_code, resp.text
+
+
 @app.route('/api/quizlet', methods=['POST'])
 def fetch_quizlet():
     data = request.json
@@ -260,17 +315,21 @@ def fetch_quizlet():
         return jsonify({"error": "No URL provided"}), 400
 
     try:
-        # Use curl_cffi to impersonate a real Chrome browser (TLS fingerprint bypass)
-        resp = cffi_requests.get(url, impersonate="chrome", timeout=15)
+        status_code, html = _fetch_quizlet_html(url)
 
-        if resp.status_code != 200:
-            return jsonify({"error": f"Quizlet returned status {resp.status_code}"}), resp.status_code
-
-        html = resp.text
+        if status_code != 200:
+            return jsonify({"error": f"Quizlet returned status {status_code}"}), status_code
 
         # Check for captcha / block page
         if "px-captcha" in html or "Access to this page has been denied" in html:
-            return jsonify({"error": "Quizlet blocked the request via captcha."}), 403
+            return jsonify({
+                "error": (
+                    "Quizlet blocked the request. "
+                    "Set SCRAPER_API_KEY or QUIZLET_PROXY_URL in your Vercel environment "
+                    "to route through a residential IP. "
+                    "See https://www.scraperapi.com/ for a free tier."
+                )
+            }), 403
 
         cards = _extract_cards_from_html(html)
         if not cards:

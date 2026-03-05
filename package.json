@@ -27,12 +27,15 @@
     "@tiptap/starter-kit": "^3.20.0",
     "canvas-confetti": "^1.9.4",
     "framer-motion": "^12.34.3",
+    "fzstd": "^0.1.1",
+    "jszip": "^3.10.1",
     "katex": "^0.16.33",
     "lucide-react": "^0.575.0",
     "papaparse": "^5.5.3",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
-    "react-router-dom": "^7.13.1"
+    "react-router-dom": "^7.13.1",
+    "sql.js": "^1.14.1"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",

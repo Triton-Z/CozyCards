@@ -6,6 +6,10 @@ import tailwindcss from '@tailwindcss/vite'
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   base: '/', // absolute paths for Vercel deployment
+  optimizeDeps: {
+    // sql.js ships a complex CommonJS bundle that must not be pre-bundled by Vite
+    exclude: ['sql.js'],
+  },
   build: {
     rollupOptions: {
       output: {
