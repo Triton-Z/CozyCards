@@ -273,6 +273,13 @@ def _fetch_quizlet_html(url: str) -> tuple[int, str]:
     If neither variable is set the request falls back to a direct curl_cffi
     Chrome-impersonation call (works fine on local / non-datacenter hosts).
     """
+    # Validate that the URL targets quizlet.com to prevent SSRF
+    parsed = urllib.parse.urlparse(url)
+    if parsed.scheme not in ('http', 'https') or not (
+        parsed.netloc == 'quizlet.com' or parsed.netloc.endswith('.quizlet.com')
+    ):
+        raise ValueError("URL must be a quizlet.com address")
+
     scraper_api_key = os.environ.get('SCRAPER_API_KEY', '').strip()
     proxy_url = os.environ.get('QUIZLET_PROXY_URL', '').strip()
 

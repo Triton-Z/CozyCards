@@ -106,7 +106,7 @@ function parsePbMediaEntries(data) {
 // Zstd decompression helper
 // ---------------------------------------------------------------------------
 
-const ZSTD_MAGIC = [0x28, 0xb5, 0x2f, 0xfd];
+const ZSTD_MAGIC = Object.freeze([0x28, 0xb5, 0x2f, 0xfd]);
 
 function zstdDecompress(data) {
   if (
@@ -284,14 +284,16 @@ export async function parseApkg(file) {
     for (const [ntId, ntName, ntConfig] of (ntRes[0]?.values ?? [])) {
       const ntCfg = ntConfig ? new Uint8Array(ntConfig) : new Uint8Array();
       const css = ntCfg.length ? extractPbString(ntCfg, 3) : '';
+      // Use parseInt to ensure ntId is always a safe integer (prevents SQL injection)
+      const safeNtId = parseInt(ntId, 10);
 
       const fieldsRes = db.exec(
-        `SELECT name, ord FROM fields WHERE ntid=${ntId} ORDER BY ord`
+        `SELECT name, ord FROM fields WHERE ntid=${safeNtId} ORDER BY ord`
       );
       const flds = (fieldsRes[0]?.values ?? []).map(([name, ord]) => ({ name, ord }));
 
       const tmplsRes = db.exec(
-        `SELECT name, ord, config FROM templates WHERE ntid=${ntId} ORDER BY ord`
+        `SELECT name, ord, config FROM templates WHERE ntid=${safeNtId} ORDER BY ord`
       );
       const tmpls = (tmplsRes[0]?.values ?? []).map(([name, , config]) => {
         const tCfg = config ? new Uint8Array(config) : new Uint8Array();
