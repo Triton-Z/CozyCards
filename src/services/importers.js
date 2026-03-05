@@ -1,4 +1,5 @@
 import Papa from 'papaparse';
+import { parseApkg as parseApkgClient } from './apkgParser.js';
 
 /**
  * Parses a Quizlet set URL to extract term/definition pairs.
@@ -42,23 +43,15 @@ export async function fetchQuizletSet(url) {
 }
 
 /**
- * Uploads an .apkg file to the Python backend for full parsing
- * (models, templates, media embedding).
+ * Parses an .apkg file entirely in the browser (no server upload required).
+ * Uses JSZip to extract the archive, sql.js to read the SQLite database, and
+ * fzstd to handle zstd-compressed Anki 2.1.50+ decks.
+ * This avoids Vercel's 4.5 MB body-size limit that blocks large deck uploads.
  * @param {File} file - The .apkg File object
  * @returns {Promise<{title: string, cards: Array<{front: string, back: string, css?: string}>}>}
  */
 export async function uploadApkg(file) {
-  const form = new FormData();
-  form.append('file', file);
-
-  const response = await fetch('/api/apkg', { method: 'POST', body: form });
-  const data = await response.json();
-
-  if (!response.ok) {
-    throw new Error(data.error || `Server returned ${response.status}`);
-  }
-
-  return { title: data.title, cards: data.cards || [] };
+  return parseApkgClient(file);
 }
 
 /**
